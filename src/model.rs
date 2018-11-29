@@ -79,7 +79,7 @@ where
     #[doc(hidden)]
     fn build_has_one<M: JsonApiModel>(model: &M) -> Relationship {
         Relationship {
-            data: IdentifierData::Single(model.as_resource_identifier()),
+            data: Some(IdentifierData::Single(model.as_resource_identifier())),
             links: None,
         }
     }
@@ -87,9 +87,9 @@ where
     #[doc(hidden)]
     fn build_has_many<M: JsonApiModel>(models: &[M]) -> Relationship {
         Relationship {
-            data: IdentifierData::Multiple(
+            data: Some(IdentifierData::Multiple(
                 models.iter().map(|m| m.as_resource_identifier()).collect(),
-            ),
+            )),
             links: None,
         }
     }
@@ -153,14 +153,14 @@ where
                 for (name, relation) in relations {
                     let value =
                         match relation.data {
-                            IdentifierData::None => Value::Null,
-                            IdentifierData::Single(ref identifier) => {
+                            None | Some(IdentifierData::None) => Value::Null,
+                            Some(IdentifierData::Single(ref identifier)) => {
                                 let found = Self::lookup(identifier, inc).map(|r| {
                                     Self::resource_to_attrs(r, included)
                                 });
                                 to_value(found).expect("Casting Single relation to value")
                             }
-                            IdentifierData::Multiple(ref identifiers) => {
+                            Some(IdentifierData::Multiple(ref identifiers)) => {
                                 let found: Vec<Option<ResourceAttributes>> =
                                 identifiers.iter().map(|id|{
                                     Self::lookup(id, inc).map(|r|{
@@ -252,7 +252,7 @@ macro_rules! jsonapi_model {
 
                 Some(FIELDS)
             }
-            
+
             fn build_relationships(&self) -> Option<Relationships> {
                 let mut relationships = HashMap::new();
                 $(
@@ -267,7 +267,7 @@ macro_rules! jsonapi_model {
                 )*
                 Some(relationships)
             }
-            
+
             fn build_included(&self) -> Option<Resources> {
                 let mut included:Resources = vec![];
                 $( included.append(&mut self.$has_one.to_resources()); )*
