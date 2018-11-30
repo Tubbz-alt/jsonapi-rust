@@ -215,6 +215,41 @@ pub fn vec_to_jsonapi_document<T: JsonApiModel>(objects: Vec<T>) -> JsonApiDocum
     }
 }
 
+
+impl<M: JsonApiModel> JsonApiModel for Option<M> {
+    fn jsonapi_type(&self) -> String {
+        match self {
+            Some(m) => m.jsonapi_type(),
+            None => String::new(),
+        }
+    }
+    
+    fn jsonapi_id(&self) -> String {
+        match self {
+            Some(m) => m.jsonapi_id(),
+            None => String::new(),
+        }
+    }
+
+    fn relationship_fields() -> Option<&'static [&'static str]> {
+        M::relationship_fields()
+    }
+
+    fn build_relationships(&self) -> Option<Relationships> {
+        match self {
+            Some(m) => m.build_relationships(),
+            None => None,
+        }
+    }
+
+    fn build_included(&self) -> Option<Resources> {
+        match self {
+            Some(m) => m.build_included(),
+            None => None,
+        }
+    }
+}
+
 #[macro_export]
 macro_rules! jsonapi_model {
     ($model:ty; $type:expr) => (
