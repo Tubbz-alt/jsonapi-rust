@@ -13,6 +13,7 @@ pub struct Query {
     pub _type: String,
     pub include: Option<Vec<String>>,
     pub fields: Option<HashMap<String, Vec<String>>>,
+    pub filters: Option<HashMap<String, Vec<String>>>,
     pub page: Option<PageParams>,
 }
 
@@ -70,6 +71,27 @@ impl Query {
                         }
                     } else {
                         error!("Query::from_params : No fields found in {:?}", x);
+                    }
+                }
+
+                let mut filters = HashMap::<String, Vec<String>>::new();
+
+                if let Some(x) = o.pointer("/filters") {
+                    if x.is_object() {
+                        if let Some(obj) = x.as_object() {
+                            for (key, value) in obj.iter() {
+                                let arr: Vec<String> = match value.as_str() {
+                                    Some(string) => {
+                                        string.split(',').map(|s| s.to_string()).collect()
+                                    }
+                                    None => Vec::<String>::new(),
+                                };
+                                filters.insert(key.to_string(), arr);
+
+                            }
+                        }
+                    } else {
+                        error!("Query::from_params : No filters found in {:?}", x);
                     }
                 }
 
@@ -144,6 +166,7 @@ impl Query {
                     _type: "none".into(),
                     include,
                     fields: Some(fields),
+                    filters: Some(filters),
                     page: Some(page),
                 }
             }
@@ -166,6 +189,7 @@ impl Query {
     ///   _type: "post".into(),
     ///   include: Some(vec!["author".into()]),
     ///   fields: None,
+    ///   filters: None,
     ///   page: Some(PageParams {
     ///     size: 5,
     ///     number: 10,
@@ -190,6 +214,12 @@ impl Query {
         if let Some(ref fields) = self.fields {
             for (name, val) in fields.iter() {
                 params.push(format!("fields[{}]={}", name, val.join(",")));
+            }
+        }
+
+        if let Some(ref filters) = self.filters {
+            for (name, val) in filters.iter() {
+                params.push(format!("filter[{}]={}", name, val.join(",")));
             }
         }
 
