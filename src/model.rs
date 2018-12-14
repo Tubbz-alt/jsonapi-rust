@@ -250,6 +250,28 @@ impl<M: JsonApiModel> JsonApiModel for Option<M> {
     }
 }
 
+impl<M: JsonApiModel> JsonApiModel for Box<M> {
+    fn jsonapi_type(&self) -> String {
+        self.as_ref().jsonapi_type()
+    }
+
+    fn jsonapi_id(&self) -> String {
+        self.as_ref().jsonapi_id()
+    }
+
+    fn relationship_fields() -> Option<&'static [&'static str]> {
+        M::relationship_fields()
+    }
+
+    fn build_relationships(&self) -> Option<Relationships> {
+        self.as_ref().build_relationships()
+    }
+
+    fn build_included(&self) -> Option<Resources> {
+        self.as_ref().build_included()
+    }
+}
+
 #[macro_export]
 macro_rules! jsonapi_model {
     ($model:ty; $type:expr) => (
