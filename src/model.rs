@@ -35,7 +35,7 @@ impl<M: JsonApiModel> JsonApiArray<M> for Option<Vec<M>> {
 /// `jsonapi_model!` macro instead.
 pub trait JsonApiModel: Serialize
 where
-    for<'de> Self: Deserialize<'de>,
+    for<'de> Self: Deserialize<'de> + std::fmt::Debug,
 {
     #[doc(hidden)]
     fn jsonapi_type(&self) -> String;
@@ -88,7 +88,16 @@ where
 
                 (resource, self.build_included())
             }
-            _ =>{
+            Value::Null => {
+                let resource = Resource {
+                    _type: self.jsonapi_type(),
+                    id: self.jsonapi_id(),
+                    ..Default::default()
+                };
+
+                (resource, None)
+            }
+            _ => {
                 panic!(format!("{} is not a Value::Object", self.jsonapi_type()))
             }
         }
