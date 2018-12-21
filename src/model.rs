@@ -4,13 +4,38 @@ use errors::*;
 use serde::{Deserialize, Serialize};
 use serde_json::{from_value, to_value, Value, Map};
 
+/// Trait which allows a `has many` relationship to be optional.
+pub trait JsonApiArray<M> {
+    fn get_models(&self) -> &[M];
+    fn get_models_mut(&mut self) -> &mut [M];
+}
+
+impl<M: JsonApiModel> JsonApiArray<M> for Vec<M> {
+    fn get_models(&self) -> &[M] { self }
+    fn get_models_mut(&mut self) -> &mut [M] { self }
+}
+
+impl<M: JsonApiModel> JsonApiArray<M> for Option<Vec<M>> {
+    fn get_models(&self) -> &[M] {
+        self.as_ref()
+            .map(|v| v.as_slice())
+            .unwrap_or(&[][..])
+    }
+
+    fn get_models_mut(&mut self) -> &mut [M] {
+        self.as_mut()
+            .map(|v| v.as_mut_slice())
+            .unwrap_or(&mut [][..])
+    }
+}
+
 /// A trait for any struct that can be converted from/into a Resource.
 /// The only requirement is that your struct has an 'id: String' field.
 /// You shouldn't be implementing JsonApiModel manually, look at the
 /// `jsonapi_model!` macro instead.
 pub trait JsonApiModel: Serialize
 where
-    for<'de> Self: Deserialize<'de>,
+    for<'de> Self: Deserialize<'de> + std::fmt::Debug,
 {
     #[doc(hidden)]
     fn jsonapi_type(&self) -> String;
@@ -49,19 +74,32 @@ where
     }
 
     fn to_jsonapi_resource(&self) -> (Resource, Option<Resources>) {
-        if let Value::Object(mut attrs) = to_value(self).unwrap() {
-            let _ = attrs.remove("id");
-            let resource = Resource {
-                _type: self.jsonapi_type(),
-                id: self.jsonapi_id(),
-                relationships: self.build_relationships(),
-                attributes: Self::extract_attributes(&attrs),
-                ..Default::default()
-            };
+        let value = to_value(self).expect("failed to get model as jsonapi resource");
+        match value {
+            Value::Object(mut attrs) => {
+                let _ = attrs.remove("id");
+                let resource = Resource {
+                    _type: self.jsonapi_type(),
+                    id: self.jsonapi_id(),
+                    relationships: self.build_relationships(),
+                    attributes: Self::extract_attributes(&attrs),
+                    ..Default::default()
+                };
 
-            (resource, self.build_included())
-        } else {
-            panic!(format!("{} is not a Value::Object", self.jsonapi_type()))
+                (resource, self.build_included())
+            }
+            Value::Null => {
+                let resource = Resource {
+                    _type: self.jsonapi_type(),
+                    id: self.jsonapi_id(),
+                    ..Default::default()
+                };
+
+                (resource, None)
+            }
+            _ => {
+                panic!(format!("{} is not a Value::Object", self.jsonapi_type()))
+            }
         }
     }
 
@@ -180,7 +218,7 @@ where
 
     #[doc(hidden)]
     fn from_serializable<S: Serialize>(s: S) -> Result<Self> {
-        from_value(to_value(s).unwrap()).chain_err(|| "Error casting via serde_json")
+        from_value(to_value(s).expect("bad serialize")).chain_err(|| "Error casting via serde_json")
     }
 }
 
@@ -223,7 +261,7 @@ impl<M: JsonApiModel> JsonApiModel for Option<M> {
             None => String::new(),
         }
     }
-    
+
     fn jsonapi_id(&self) -> String {
         match self {
             Some(m) => m.jsonapi_id(),
@@ -318,8 +356,12 @@ macro_rules! jsonapi_model {
                     );
                 )*
                 $(
-                    relationships.insert(stringify!($has_many).into(),
-                        Self::build_has_many(&self.$has_many)
+                    relationships.insert(
+                        stringify!($has_many).into(),
+                        {
+                            let values = &self.$has_many.get_models();
+                            Self::build_has_many(values)
+                        }
                     );
                 )*
                 Some(relationships)
@@ -329,7 +371,7 @@ macro_rules! jsonapi_model {
                 let mut included:Resources = vec![];
                 $( included.append(&mut self.$has_one.to_resources()); )*
                 $(
-                    for model in &self.$has_many {
+                    for model in self.$has_many.get_models() {
                         included.append(&mut model.to_resources());
                     }
                 )*
