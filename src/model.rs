@@ -48,22 +48,22 @@ where
     #[doc(hidden)]
     fn build_included(&self) -> Option<Resources>;
 
-    fn from_jsonapi_resource(resource: &Resource, included: &Option<Resources>) -> Result<Self> {
-        Self::from_serializable(Self::resource_to_attrs(resource, included))
+    fn from_jsonapi_resource(resource: &Resource, included: &Option<Resources>, limit: usize) -> Result<Self> {
+        Self::from_serializable(Self::resource_to_attrs(resource, included, limit))
     }
 
-    fn from_jsonapi_document(doc: &JsonApiDocument) -> Result<Self> {
+    fn from_jsonapi_document(doc: &JsonApiDocument, limit: usize) -> Result<Self> {
         match doc.data.as_ref() {
             Some(primary_data) => {
                 match *primary_data {
                     PrimaryData::None => bail!("Document had no data"),
                     PrimaryData::Single(ref resource) => {
-                        Self::from_jsonapi_resource(resource, &doc.included)
+                        Self::from_jsonapi_resource(resource, &doc.included, limit)
                     }
                     PrimaryData::Multiple(ref resources) => {
                         let all: Vec<ResourceAttributes> = resources
                             .iter()
-                            .map(|r| Self::resource_to_attrs(r, &doc.included))
+                            .map(|r| Self::resource_to_attrs(r, &doc.included, limit))
                             .collect();
                         Self::from_serializable(all)
                     }
@@ -180,8 +180,9 @@ where
         None
     }
 
+    //TODO: Do not use recursion
     #[doc(hidden)]
-    fn resource_to_attrs(resource: &Resource, included: &Option<Resources>) -> ResourceAttributes {
+    fn resource_to_attrs(resource: &Resource, included: &Option<Resources>, mut limit: usize) -> ResourceAttributes {
         let mut new_attrs = HashMap::new();
         new_attrs.clone_from(&resource.attributes);
         new_attrs.insert("id".into(), resource.id.clone().into());
@@ -193,19 +194,27 @@ where
                         match relation.data {
                             None | Some(IdentifierData::None) => Value::Null,
                             Some(IdentifierData::Single(ref identifier)) => {
-                                let found = Self::lookup(identifier, inc).map(|r| {
-                                    Self::resource_to_attrs(r, included)
-                                });
-                                to_value(found).expect("Casting Single relation to value")
+                                if limit > 0 {
+                                    let found = Self::lookup(identifier, inc).map(|r| {
+                                        Self::resource_to_attrs(r, included, limit - 1)
+                                    });
+                                    to_value(found).expect("Casting Single relation to value")
+                                } else {
+                                    Value::Null
+                                }
                             }
                             Some(IdentifierData::Multiple(ref identifiers)) => {
-                                let found: Vec<Option<ResourceAttributes>> =
-                                identifiers.iter().map(|id|{
-                                    Self::lookup(id, inc).map(|r|{
-                                        Self::resource_to_attrs(r, included)
-                                    })
-                                }).collect();
-                                to_value(found).expect("Casting Multiple relation to value")
+                                if limit > 0 {
+                                    let found: Vec<Option<ResourceAttributes>> =
+                                    identifiers.iter().map(|id|{
+                                        Self::lookup(id, inc).map(|r|{
+                                            Self::resource_to_attrs(r, included, limit - 1)
+                                        })
+                                    }).collect();
+                                    to_value(found).expect("Casting Multiple relation to value")
+                                } else {
+                                    Value::Null
+                                }
                             }
                         };
                     new_attrs.insert(name.to_string(), value);
